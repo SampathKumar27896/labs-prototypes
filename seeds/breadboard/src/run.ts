@@ -4,32 +4,91 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type {
-  InputValues,
-  NodeDescriptor,
-  OutputValues,
+import {
+  MachineResult,
+  type InputValues,
+  type NodeDescriptor,
+  type OutputValues,
+  type TraversalResult,
 } from "@google-labs/graph-runner";
-import type { BreadbordRunResult } from "./types.js";
+import type { BreadbordRunResult as BreadboardRunResult } from "./types.js";
 
-export class InputStageResult implements BreadbordRunResult {
-  seeksInputs = true;
-  #args: InputValues = {};
-  #inputs: InputValues = {};
+export const replacer = (key: string, value: unknown) => {
+  if (!(value instanceof Map)) return value;
 
-  constructor(public node: NodeDescriptor, args: InputValues) {
-    this.#args = args;
+  return {
+    $type: "Map",
+    value: Array.from(value.entries()),
+  };
+};
+
+export const reviver = (
+  key: string,
+  value: unknown & {
+    $type?: string;
+    value: Iterable<readonly [string, unknown]>;
+  }
+) => {
+  const { $type } = (value || {}) as { $type?: string };
+  return $type == "Map" && value.value
+    ? new Map<string, unknown>(value.value)
+    : value;
+};
+
+export class RunResult implements BreadboardRunResult {
+  #seeksInputs: boolean;
+  #state: TraversalResult;
+
+  constructor(state: TraversalResult, seeksInputs: boolean) {
+    this.#state = state;
+    this.#seeksInputs = seeksInputs;
+  }
+
+  get seeksInputs(): boolean {
+    return this.#seeksInputs;
+  }
+
+  get node(): NodeDescriptor {
+    return this.#state.descriptor;
   }
 
   get inputArguments(): InputValues {
-    return this.#args;
+    return this.#state.inputs;
   }
 
   set inputs(inputs: InputValues) {
-    this.#inputs = inputs;
+    this.#state.outputs = inputs;
   }
 
   get inputs(): InputValues {
-    return this.#inputs;
+    return this.#state.outputs || {};
+  }
+
+  get outputs(): OutputValues {
+    return this.#state.inputs;
+  }
+
+  get state(): TraversalResult {
+    return this.#state;
+  }
+
+  save() {
+    return JSON.stringify(
+      { state: this.#state, seeksInputs: this.#seeksInputs },
+      replacer
+    );
+  }
+
+  static load(stringifiedResult: string): RunResult {
+    const { state, seeksInputs } = JSON.parse(stringifiedResult, reviver);
+    const machineResult = MachineResult.fromObject(state);
+    return new RunResult(machineResult, seeksInputs);
+  }
+}
+
+export class InputStageResult extends RunResult {
+  constructor(state: TraversalResult) {
+    super(state, true);
   }
 
   get outputs(): OutputValues {
@@ -37,12 +96,9 @@ export class InputStageResult implements BreadbordRunResult {
   }
 }
 
-export class OutputStageResult implements BreadbordRunResult {
-  seeksInputs = false;
-  #outputs: OutputValues = {};
-
-  constructor(public node: NodeDescriptor, outputs: OutputValues) {
-    this.#outputs = outputs;
+export class OutputStageResult extends RunResult {
+  constructor(state: TraversalResult) {
+    super(state, false);
   }
 
   get inputArguments(): InputValues {
@@ -51,9 +107,5 @@ export class OutputStageResult implements BreadbordRunResult {
 
   set inputs(inputs: InputValues) {
     throw new Error("Setting inputs is not available in the output stage");
-  }
-
-  get outputs(): OutputValues {
-    return this.#outputs;
   }
 }

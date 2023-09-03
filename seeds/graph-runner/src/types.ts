@@ -140,7 +140,37 @@ export type GraphDescriptor = {
   kits?: KitDescriptor[];
 };
 
+/**
+ * Additional concept: whether or not an output was consumed by the intended
+ * input.
+ * State stores all outputs that have not yet been consumed, organized as
+ * a map of maps
+ */
+export type EdgeStateMap = Map<string, Map<string, OutputValues>>;
+
+export interface EdgeState {
+  state: EdgeStateMap;
+  constants: EdgeStateMap;
+  update(
+    node: NodeIdentifier,
+    opportunities: Edge[],
+    outputs?: OutputValues
+  ): void;
+  getAvailableOutputs(node: NodeIdentifier): EdgeMap;
+}
+
 export type EdgeMap = Map<NodeIdentifier, OutputValues>;
+
+export interface TraversalResult {
+  descriptor: NodeDescriptor;
+  inputs: InputValues;
+  missingInputs: string[];
+  opportunities: Edge[];
+  newOpportunities: Edge[];
+  state: EdgeState;
+  outputs?: OutputValues;
+  skip: boolean;
+}
 
 /**
  * Values that are supplied as inputs to the `NodeHandler`.

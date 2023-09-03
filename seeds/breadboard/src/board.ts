@@ -17,7 +17,6 @@ import type {
 import {
   type Breadboard,
   type BreadboardSlotSpec,
-  type BreadbordRunResult,
   type Kit,
   type KitConstructor,
   type OptionalIdConfiguration,
@@ -32,7 +31,7 @@ import {
 import { TraversalMachine, toMermaid } from "@google-labs/graph-runner";
 import { Node } from "./node.js";
 import { Core } from "./core.js";
-import { InputStageResult, OutputStageResult } from "./run.js";
+import { InputStageResult, OutputStageResult, RunResult } from "./run.js";
 import { KitLoader } from "./kit.js";
 import { IdVendor } from "./id.js";
 
@@ -131,8 +130,9 @@ export class Board implements Breadboard {
    */
   async *run(
     probe?: EventTarget,
-    slots?: BreadboardSlotSpec
-  ): AsyncGenerator<BreadbordRunResult> {
+    slots?: BreadboardSlotSpec,
+    result?: RunResult
+  ): AsyncGenerator<RunResult> {
     const core = new Core(
       this,
       { ...this.#slots, ...slots },
@@ -146,7 +146,7 @@ export class Board implements Breadboard {
 
     this.#validators.forEach((validator) => validator.addGraph(this));
 
-    const machine = new TraversalMachine(this);
+    const machine = new TraversalMachine(this, result?.state);
 
     for await (const result of machine) {
       const { inputs, descriptor, missingInputs } = result;
@@ -159,9 +159,7 @@ export class Board implements Breadboard {
       }
 
       if (descriptor.type === "input") {
-        const inputStage = new InputStageResult(descriptor, inputs);
-        yield inputStage;
-        result.outputs = inputStage.inputs;
+        yield new InputStageResult(result);
         probe?.dispatchEvent(
           new ProbeEvent("input", {
             descriptor,
@@ -174,7 +172,7 @@ export class Board implements Breadboard {
 
       if (descriptor.type === "output") {
         probe?.dispatchEvent(new ProbeEvent("output", { descriptor, inputs }));
-        yield new OutputStageResult(descriptor, inputs);
+        yield new OutputStageResult(result);
         continue;
       }
 

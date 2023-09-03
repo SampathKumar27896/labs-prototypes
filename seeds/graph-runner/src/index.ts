@@ -17,6 +17,8 @@ export type {
   KitDescriptor,
   NodeValue,
   Capability,
+  TraversalResult,
 } from "./types.js";
 export { TraversalMachine } from "./traversal/machine.js";
+export { MachineResult } from "./traversal/result.js";
 export { toMermaid } from "./mermaid.js";
