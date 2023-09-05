@@ -11,7 +11,7 @@ import {
   type OutputValues,
   type TraversalResult,
 } from "@google-labs/graph-runner";
-import type { BreadbordRunResult as BreadboardRunResult } from "./types.js";
+import type { BreadboardRunResult, RunResultType } from "./types.js";
 
 export const replacer = (key: string, value: unknown) => {
   if (!(value instanceof Map)) return value;
@@ -36,16 +36,16 @@ export const reviver = (
 };
 
 export class RunResult implements BreadboardRunResult {
-  #seeksInputs: boolean;
+  #type: RunResultType;
   #state: TraversalResult;
 
-  constructor(state: TraversalResult, seeksInputs: boolean) {
+  constructor(state: TraversalResult, type: RunResultType) {
     this.#state = state;
-    this.#seeksInputs = seeksInputs;
+    this.#type = type;
   }
 
-  get seeksInputs(): boolean {
-    return this.#seeksInputs;
+  get type(): RunResultType {
+    return this.#type;
   }
 
   get node(): NodeDescriptor {
@@ -73,10 +73,7 @@ export class RunResult implements BreadboardRunResult {
   }
 
   save() {
-    return JSON.stringify(
-      { state: this.#state, seeksInputs: this.#seeksInputs },
-      replacer
-    );
+    return JSON.stringify({ state: this.#state, type: this.#type }, replacer);
   }
 
   static load(stringifiedResult: string): RunResult {
@@ -88,21 +85,37 @@ export class RunResult implements BreadboardRunResult {
 
 export class InputStageResult extends RunResult {
   constructor(state: TraversalResult) {
-    super(state, true);
+    super(state, "input");
   }
 
   get outputs(): OutputValues {
-    throw new Error("Outputs are not available in the input stage");
+    throw new Error('Outputs are not available in the "input" stage');
   }
 }
 
 export class OutputStageResult extends RunResult {
   constructor(state: TraversalResult) {
-    super(state, false);
+    super(state, "output");
   }
 
   get inputArguments(): InputValues {
-    throw new Error("Input arguments are not available in the output stage");
+    throw new Error('Input arguments are not available in the "output" stage');
+  }
+
+  set inputs(inputs: InputValues) {
+    throw new Error('Setting inputs is not available in the "output" stage');
+  }
+}
+
+export class BeforeHandlerStageResult extends RunResult {
+  constructor(state: TraversalResult) {
+    super(state, "beforehandler");
+  }
+
+  get inputArguments(): InputValues {
+    throw new Error(
+      'Input arguments are not available in the "befoerhandler" stage'
+    );
   }
 
   set inputs(inputs: InputValues) {

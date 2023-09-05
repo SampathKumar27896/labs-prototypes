@@ -12,6 +12,7 @@ import type {
   GraphDescriptor,
   OutputValues,
   NodeHandler,
+  GraphMetadata,
 } from "@google-labs/graph-runner";
 
 import {
@@ -31,33 +32,21 @@ import {
 import { TraversalMachine, toMermaid } from "@google-labs/graph-runner";
 import { Node } from "./node.js";
 import { Core } from "./core.js";
-import { InputStageResult, OutputStageResult, RunResult } from "./run.js";
+import {
+  BeforeHandlerStageResult,
+  InputStageResult,
+  OutputStageResult,
+  RunResult,
+} from "./run.js";
 import { KitLoader } from "./kit.js";
 import { IdVendor } from "./id.js";
+import { BoardLoader } from "./loader.js";
 
 class ProbeEvent extends CustomEvent<ProbeDetails> {
   constructor(type: string, detail: ProbeDetails) {
     super(type, { detail, cancelable: true });
   }
 }
-
-/**
- * @todo Make this just take a $ref and figure out when it's a path or a URL.
- * @param path
- * @param ref
- * @returns
- */
-export const loadGraph = async (path?: string, ref?: string) => {
-  if (path && typeof process === "undefined")
-    throw new Error("Unable to use `path` when not running in node");
-  if (path) {
-    const { readFile } = await import("node:fs/promises");
-    return JSON.parse(await readFile(path, "utf-8"));
-  }
-  if (!ref) throw new Error("To include, we need a path or a $ref");
-  const response = await fetch(ref);
-  return await response.json();
-};
 
 const nodeTypeVendor = new IdVendor();
 
@@ -92,12 +81,26 @@ class LocalKit implements Kit {
  * For more information on how to use Breadboard, start with [Chapter 1: Hello, world?](https://github.com/google/labs-prototypes/tree/main/seeds/breadboard/docs/tutorial#chapter-7-probes) of the tutorial.
  */
 export class Board implements Breadboard {
+  url?: string;
+  title?: string;
+  description?: string;
+  version?: string;
   edges: Edge[] = [];
   nodes: NodeDescriptor[] = [];
   kits: Kit[] = [];
   #localKit?: LocalKit;
   #slots: BreadboardSlotSpec = {};
   #validators: BreadboardValidator[] = [];
+
+  /**
+   *
+   * @param metadata - optional metadata for the board. Use this parameter
+   * to provide title, description, version, and URL for the board.
+   */
+  constructor(metadata?: GraphMetadata) {
+    const { url, title, description, version } = metadata || {};
+    Object.assign(this, { url, title, description, version });
+  }
 
   /**
    * Runs the board. This method is an async generator that
@@ -114,13 +117,16 @@ export class Board implements Breadboard {
    * }
    * ```
    *
-   * The `stop` iterator result will have the following properties:
+   * The `stop` iterator result will be a `RunResult` and provide ability
+   * to influence running of the board.
    *
-   * - `seeksInputs`: boolean - returns `true` if the board is waiting for
-   *  input values. Returns `false` if the board is providing outputs.
-   * - `inputs`: InputValues - the input values the board is waiting for. Set this property to provide input values. This property is only available when `seeksInputs` is `true`.
-   * - `inputArguments`: InputValues - any arguments that were passed to the `input` node that triggered this stage. Usually contains `message` property, which is a friendly message to the user about what input is expected. This property is only available when `seeksInputs` is `true`.
-   * - `outputs`: OutputValues - the output values the board is providing. This property is only available when `seeksInputs` is `false`.
+   * The two key use cases are providing input and receiving output.
+   *
+   * If `stop.type` is `input`, the board is waiting for input values.
+   * When that is the case, use `stop.inputs` to provide input values.
+   *
+   * If `stop.type` is `output`, the board is providing output values.
+   * When that is the case, use `stop.outputs` to receive output values.
    *
    * See [Chapter 8: Continuous runs](https://github.com/google/labs-prototypes/tree/main/seeds/breadboard/docs/tutorial#chapter-8-continuous-runs) of Breadboard tutorial for an example of how to use this method.
    *
@@ -191,6 +197,8 @@ export class Board implements Breadboard {
         outputs: {},
       };
 
+      yield new BeforeHandlerStageResult(result);
+
       const shouldInvokeHandler =
         !probe ||
         probe.dispatchEvent(
@@ -238,9 +246,9 @@ export class Board implements Breadboard {
   ): Promise<OutputValues> {
     let outputs: OutputValues = {};
     for await (const result of this.run(probe, slots)) {
-      if (result.seeksInputs) {
+      if (result.type === "input") {
         result.inputs = inputs;
-      } else {
+      } else if (result.type === "output") {
         outputs = result.outputs;
         // Exit once we receive the first output.
         break;
@@ -491,7 +499,7 @@ export class Board implements Breadboard {
    * @returns - a new `Board` instance.
    */
   static async fromGraphDescriptor(graph: GraphDescriptor): Promise<Board> {
-    const breadboard = new Board();
+    const breadboard = new Board(graph);
     breadboard.edges = graph.edges;
     breadboard.nodes = graph.nodes;
     const loader = new KitLoader(graph.kits);
@@ -502,16 +510,19 @@ export class Board implements Breadboard {
   /**
    * Loads a board from a URL or a file path.
    *
-   * @param $ref - the URL or a file path to the board.
+   * @param url - the URL or a file path to the board.
    * @param slots - optional slots to provide to the board.
    * @returns - a new `Board` instance.
    */
-  static async load($ref: string, slots?: BreadboardSlotSpec): Promise<Board> {
-    const url = new URL($ref, new URL(import.meta.url));
-    const path = url.protocol === "file:" ? $ref : undefined;
-    const graph = await loadGraph(path, $ref);
+  static async load(
+    url: string,
+    options?: { slotted?: BreadboardSlotSpec; base?: string }
+  ): Promise<Board> {
+    const { base, slotted } = options || {};
+    const loader = new BoardLoader(base);
+    const graph = await loader.load(url);
     const board = await Board.fromGraphDescriptor(graph);
-    board.#slots = slots || {};
+    board.#slots = slotted || {};
     return board;
   }
 }

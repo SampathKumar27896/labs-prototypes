@@ -121,9 +121,35 @@ export type KitDescriptor = {
 };
 
 /**
+ * Represents graph metadata.
+ */
+export type GraphMetadata = {
+  /**
+   * The URL pointing to the location of the graph.
+   * This URL is used to resolve relative paths in the graph.
+   * If not specified, the paths are assumed to be relative to the current
+   * working directory.
+   */
+  url?: string;
+  /**
+   * The title of the graph.
+   */
+  title?: string;
+  /**
+   * The description of the graph.
+   */
+  description?: string;
+  /**
+   * Version of the graph.
+   * [semver](https://semver.org/) format is encouraged.
+   */
+  version?: string;
+};
+
+/**
  * Represents a graph.
  */
-export type GraphDescriptor = {
+export type GraphDescriptor = GraphMetadata & {
   /**
    * The collection of all edges in the graph.
    */
